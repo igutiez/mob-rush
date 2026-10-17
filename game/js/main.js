@@ -7,9 +7,10 @@ import {
 import { themeFor, isBoss, stagesFor, buildEnvironment, updateWeather, updateClouds, setWorldTime } from './world.js';
 import { buildBase, baseView } from './bases.js';
 import {
-  setAnimTime, crowds, TROOPS, HERO_MODELS, createHero, cannonGroup, barrelPivot, sideBarrels, muzzle, muzzleLight,
+  cannonGroup, barrelPivot, sideBarrels, muzzle, muzzleLight,
   wall, wallMat, WALL_Z, gateMeshes, obstacleMeshes, barrelGlow, arrowMesh, MAX_ARROWS, fireMesh, MAX_FIRE, lightPillar,
 } from './models.js';
+import { loadCharacters, crowds, writeVat, createHero, HERO_DEFS, rings } from './characters.js';
 import { fx, burst, trail, explodeDebris, shockwave, addPillar, clearFx, updateFx, syncFx, popup } from './fx.js';
 import { save, persist, HEROES, heroLevel, stats } from './save.js';
 import { ensureAudio, sfx, boom, fanfare, vibrate } from './audio.js';
@@ -30,7 +31,7 @@ const UNIT = {
   king: { team: 0, r: 0.6, speed: 4.2, big: true, hero: true },
   archer: { team: 0, r: 0.5, speed: 3.4, big: true, hero: true },
   mage: { team: 0, r: 0.5, speed: 3.2, big: true, hero: true },
-  griffin: { team: 0, r: 0.6, speed: 5.5, big: true, hero: true, flying: true },
+  rogue: { team: 0, r: 0.5, speed: 5.2, big: true, hero: true, ghost: true },
 };
 const MAX_BLUE = 700;
 const MAX_RED = 420;
@@ -39,7 +40,7 @@ const heroStats = (id, L) => ({
   king: { hp: 22 + 6 * L, radius: 2.3 + 0.12 * L, cd: 2.0 },
   archer: { hp: 10 + 3 * L, cd: Math.max(0.16, 0.42 - 0.025 * L) },
   mage: { hp: 12 + 3 * L, radius: 1.7 + 0.1 * L, cd: Math.max(0.9, 1.5 - 0.05 * L) },
-  griffin: { hp: 45 + 12 * L, radius: 1.9 + 0.08 * L, cd: 1.6 },
+  rogue: { hp: 45 + 12 * L, radius: 2.0 + 0.08 * L, cd: 1.5 },
 }[id]);
 
 // ---------- Estado ----------
@@ -182,7 +183,7 @@ function addUnit(type, x, z, opts = {}) {
   const hp = opts.hp || d.hp || 1;
   const u = {
     type, team: d.team, x, z, pz: z, y: 0, vx: 0,
-    r: d.r, hp, maxHp: hp, big: !!d.big, hero: !!d.hero, flying: !!d.flying, speed: d.speed,
+    r: d.r, hp, maxHp: hp, big: !!d.big, hero: !!d.hero, ghost: !!d.ghost, speed: d.speed, at: Math.random() * 3,
     passed: opts.passed || 0, dead: false, seed: Math.random() * 6.28, spawn: 0, atk: 0, cd: 1, shots: 0,
   };
   units.push(u);
@@ -194,7 +195,7 @@ function kill(u, color) {
   if (u.dead) return;
   u.dead = true;
   if (u.team === 0) blueCount--; else redCount--;
-  if (color) burst(u.x, u.flying ? u.y + 0.8 : 0.7, u.z, color, u.big ? 30 : 5, u.big ? 7 : 4);
+  if (color) burst(u.x, 0.7, u.z, color, u.big ? 30 : 5, u.big ? 7 : 4);
   if (u.view) {
     u.view.dispose();
     u.view = null;
@@ -213,7 +214,7 @@ const teamColor = (u) => (u.team === 0 ? '#4a9bff' : u.type === 'scout' ? '#ff9a
 function nearestEnemy(team, x, z, maxD, aheadOnly) {
   let best = null, bd = maxD * maxD;
   for (const u of units) {
-    if (u.dead || u.team === team || u.flying) continue;
+    if (u.dead || u.team === team || u.ghost) continue;
     if (aheadOnly && u.z < z - 1) continue;
     const dx = u.x - x, dz = u.z - z, d = dx * dx + dz * dz;
     if (d < bd) { bd = d; best = u; }
@@ -224,7 +225,7 @@ function nearestEnemy(team, x, z, maxD, aheadOnly) {
 function enemiesNear(team, x, z, r, cb) {
   const r2 = r * r;
   for (const u of units) {
-    if (u.dead || u.team === team || u.flying) continue;
+    if (u.dead || u.team === team || u.ghost) continue;
     const dx = u.x - x, dz = u.z - z;
     if (dx * dx + dz * dz < r2) cb(u);
   }
@@ -285,8 +286,7 @@ function spawnHero() {
   u.view = createHero(id);
   u.cd = 0.6;
   u.L = L;
-  if (u.flying) u.y = 2.4;
-  const pillar = lightPillar(cannon.x, CANNON_Z + 1.2, HERO_MODELS[id].aura.clone().multiplyScalar(1.4));
+  const pillar = lightPillar(cannon.x, CANNON_Z + 1.2, HERO_DEFS[id].aura.clone().multiplyScalar(1.4));
   addPillar(pillar);
   burst(cannon.x, 1.2, CANNON_Z + 1.4, '#ffd34d', 50, 8, 1.4);
   showBanner(HEROES[id].name, `⚡ ${HEROES[id].ability}`, 'herob');
@@ -338,12 +338,17 @@ function heroAbility(u, dt) {
     fireShot('fire', 0, u.x - 0.3, 2.6, u.z + 0.3, best.x, best.z - best.speed * 0.4, 16, 2.5, { aoe: st.radius, dmg: 5 });
     sfx('cast', 300, 0.3, 'sawtooth', 0.04, 500, 0.1);
     popup(u.x, 3.2, u.z, '¡BOLA DE FUEGO!', 'gold');
-  } else if (u.type === 'griffin') {
-    const target = nearestEnemy(0, u.x, u.z + 2, 5, true);
+  } else if (u.type === 'rogue') {
+    const target = nearestEnemy(0, u.x, u.z + 1, 7, true);
     if (!target) { u.cd = 0.15; return; }
     u.cd = st.cd;
-    u.dive = 0.5;
-    u.diveX = target.x; u.diveZ = target.z;
+    u.atk = 0.7;
+    burst(u.x, 1, u.z, '#b04aff', 25, 5, 1.1);
+    u.x = target.x; u.z = Math.max(u.z, target.z - 0.7);
+    burst(u.x, 1, u.z, '#ff4ad0', 25, 5, 1.1);
+    const n = aoe(0, u.x, u.z + 0.5, st.radius, 6, '#ff4ad0');
+    sfx('slash', 1400, 0.12, 'sawtooth', 0.04, -900, 0.05);
+    popup(u.x, 3, u.z, n > 1 ? `¡DANZA DE CUCHILLAS! ×${n}` : '¡DANZA DE CUCHILLAS!', 'gold');
   }
 }
 
@@ -522,7 +527,7 @@ function update(dt) {
     sp.towerTimer -= dt;
     if (sp.towerTimer <= 0) {
       sp.towerTimer = sp.towerInterval * (0.7 + Math.random() * 0.6);
-      const targets = units.filter((u) => !u.dead && u.team === 0 && !u.flying && u.z > LEN - 24);
+      const targets = units.filter((u) => !u.dead && u.team === 0 && !u.ghost && u.z > LEN - 24);
       if (targets.length) {
         const tg = targets[Math.floor(Math.random() * targets.length)];
         const tw = baseView.towers[Math.floor(Math.random() * baseView.towers.length)];
@@ -551,23 +556,6 @@ function update(dt) {
 
     if (u.hero) {
       heroAbility(u, dt);
-      if (u.type === 'griffin') {
-        if (u.dive > 0) {
-          u.dive -= dt;
-          u.x += (u.diveX - u.x) * Math.min(1, dt * 8);
-          u.y = 0.6 + Math.abs(u.dive - 0.25) * 7;
-          if (u.dive <= 0.25 && !u.hit) {
-            u.hit = true;
-            const n = aoe(0, u.x, u.z + 0.4, heroStats('griffin', u.L).radius, 6, '#ffd34d');
-            cam.shake = Math.max(cam.shake, 0.4);
-            boom(0.18, 0.5);
-            popup(u.x, 3, u.z, n > 1 ? `¡PICADO! ×${n}` : '¡PICADO!', 'gold');
-          }
-        } else {
-          u.hit = false;
-          u.y += (2.4 + Math.sin(t * 3) * 0.3 - u.y) * Math.min(1, dt * 4);
-        }
-      }
     }
 
     if (!u.big) {
@@ -662,7 +650,7 @@ function update(dt) {
     list.push(u);
   }
   for (const b of units) {
-    if (b.dead || b.team !== 0 || b.flying) continue;
+    if (b.dead || b.team !== 0 || b.ghost) continue;
     const k = Math.floor(b.z);
     outer: for (let kk = k - 2; kk <= k + 2; kk++) {
       const list = redGrid.get(kk);
@@ -776,43 +764,49 @@ const dummy = new THREE.Object3D();
 const lookTarget = new THREE.Vector3();
 
 function syncScene(dt) {
-  setAnimTime(t);
   setWorldTime(t);
 
   for (const k in crowds) crowds[k].n = 0;
+  rings[0].n = rings[1].n = 0;
   for (const u of units) {
-    const sc = (0.4 + 0.6 * u.spawn);
+    const sc = 0.4 + 0.6 * u.spawn;
+    const attacking = u.atk > 0;
+    const rg = rings[u.team];
+    if (rg.n < rg.mesh.instanceMatrix.count) {
+      dummy.position.set(X(u.x), 0.03, u.z);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar((u.r * 2.6 + 0.15) * sc);
+      dummy.updateMatrix();
+      rg.mesh.setMatrixAt(rg.n++, dummy.matrix);
+    }
     if (u.view) {
       const v = u.view;
-      const def = HERO_MODELS[u.type];
-      v.group.position.set(X(u.x), u.flying ? u.y : 0, u.z);
-      v.body.scale.setScalar(def.scale * sc);
-      v.body.rotation.set(u.flying ? 0.15 : 0, 0, Math.sin(t * 8 + u.seed) * 0.03);
-      v.body.position.y = u.flying ? 0 : Math.abs(Math.sin(t * def.rig.walk + u.seed)) * 0.08;
-      v.uniforms.uAnim.value.set(u.seed, Math.min(1, u.atk * 3));
-      v.aura.scale.setScalar(def.scale * (1 + Math.sin(t * 6) * 0.08));
-      v.aura.position.y = u.flying ? -u.y + 0.05 : 0.05;
+      v.group.position.set(X(u.x), 0, u.z);
+      v.group.scale.setScalar(sc);
+      v.play(attacking ? 'attack' : 'run', attacking ? 1.3 : 1.1);
+      v.update(dt);
+      v.aura.scale.setScalar(HERO_DEFS[u.type].height * (1 + Math.sin(t * 6) * 0.08));
       v.aura.material.opacity = 0.35 + 0.45 * (u.hp / u.maxHp);
-      if (v.orb) v.orb.scale.setScalar(1 + Math.sin(t * 10) * 0.2 + u.atk);
       continue;
     }
     const c = crowds[u.type];
     if (!c || c.n >= c.def.max) continue;
     const i = c.n++;
-    const s = c.def.scale * sc * (u.big ? 0.75 + 0.25 * (u.hp / u.maxHp) : 1);
-    dummy.position.set(X(u.x), Math.abs(Math.sin(t * c.def.rig.walk + u.seed)) * 0.05 * s, u.z);
+    u.at += dt * (attacking ? 1.4 : c.def.rate);
+    const s = sc * (u.big ? 0.75 + 0.25 * (u.hp / u.maxHp) : 1);
+    dummy.position.set(X(u.x), 0, u.z);
     dummy.rotation.set(0, u.team === 0 ? 0 : Math.PI, u.vx * 0.03);
     dummy.scale.setScalar(s);
     dummy.updateMatrix();
     c.mesh.setMatrixAt(i, dummy.matrix);
-    c.anim.array[i * 2] = u.seed;
-    c.anim.array[i * 2 + 1] = Math.min(1, u.atk * 3);
+    writeVat(c, i, u.at, attacking);
   }
+  for (const rg of rings) { rg.mesh.count = rg.n; rg.mesh.instanceMatrix.needsUpdate = true; }
   for (const k in crowds) {
     const c = crowds[k];
     c.mesh.count = c.n;
     c.mesh.instanceMatrix.needsUpdate = true;
-    c.anim.needsUpdate = true;
+    c.vat.needsUpdate = true;
   }
 
   // Proyectiles
@@ -943,6 +937,7 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 // ============================================================
 window.addEventListener('resize', resize);
 resize();
+await loadCharacters((p) => { $('loader').querySelector('span').textContent = `Reclutando el ejército… ${Math.round(p * 100)}%`; });
 initUI({ onPlay: startGame });
 buildLevel(save.level);
 {

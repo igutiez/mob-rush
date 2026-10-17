@@ -6,9 +6,11 @@
   "scripts": {
     "vendor": "node tools/vendor.mjs",
     "icons": "node tools/make-icons.mjs",
+    "models": "node tools/prepare-models.mjs",
     "serve": "python3 -m http.server 8080 --directory game"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.5.1",
     "three": "^0.170.0"
   }
 }

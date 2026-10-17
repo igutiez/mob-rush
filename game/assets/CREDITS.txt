@@ -1,0 +1,6 @@
+Modelos 3D de personajes:
+  KayKit Character Pack: Adventurers 1.0 y KayKit Character Pack: Skeletons 1.0
+  Creados por Kay Lousberg (www.kaylousberg.com)
+  Licencia: Creative Commons Zero (CC0) - http://creativecommons.org/publicdomain/zero/1.0/
+  Origen: https://github.com/KayKit-Game-Assets
+  Recortados con tools/prepare-models.mjs (solo las animaciones y accesorios que usa el juego).

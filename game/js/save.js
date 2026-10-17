@@ -21,6 +21,9 @@ try {
   Object.assign(save, raw);
   save.buildings = { forge: 0, barracks: 0, mages: 0, treasury: 0, walls: 0, ...save.buildings };
   save.heroes = { king: 1, ...save.heroes };
+  // El Grifo se sustituyó por la Asesina Sombría
+  if (save.heroes.griffin) { save.heroes.rogue = Math.max(save.heroes.rogue || 0, save.heroes.griffin); delete save.heroes.griffin; }
+  if (save.hero === 'griffin') save.hero = 'rogue';
   if (!save.heroes[save.hero]) save.hero = 'king';
 } catch (e) { /* sin almacenamiento */ }
 
@@ -40,16 +43,16 @@ export const HEROES = {
     desc: 'Avanza en primera línea y aplasta a los enemigos cercanos con un golpe sísmico.',
   },
   archer: {
-    name: 'Arquera Élfica', rarity: 'rare', weight: 30, ability: 'Lluvia de flechas',
-    desc: 'Dispara flechas sin parar al enemigo más cercano y lanza ráfagas de cinco.',
+    name: 'Ballestera', rarity: 'rare', weight: 30, ability: 'Lluvia de virotes',
+    desc: 'Dispara su ballesta sin parar al enemigo más cercano y lanza ráfagas de cinco.',
   },
   mage: {
     name: 'Archimago', rarity: 'epic', weight: 20, ability: 'Bola de fuego',
     desc: 'Lanza bolas de fuego sobre los grupos enemigos más numerosos.',
   },
-  griffin: {
-    name: 'Grifo Real', rarity: 'legendary', weight: 8, ability: 'Picado',
-    desc: 'Vuela por encima de la batalla, cae en picado sobre el enemigo y golpea la base con fuerza.',
+  rogue: {
+    name: 'Asesina Sombría', rarity: 'legendary', weight: 8, ability: 'Danza de cuchillas',
+    desc: 'Intocable: salta entre las filas enemigas girando con dos cuchillos y golpea la base con fuerza.',
   },
 };
 export const HERO_IDS = Object.keys(HEROES);
@@ -80,7 +83,7 @@ export const BUILDINGS = [
   },
   {
     id: 'barracks', name: 'Cuartel', icon: '🛡️', max: 10, base: 60,
-    effect: (l) => `${Math.round(l * 5)}% de disparos salen como caballeros`,
+    effect: (l) => `${Math.round(l * 5)}% de disparos salen como bárbaros (3 vidas)`,
   },
   {
     id: 'mages', name: 'Torre de magos', icon: '🔮', max: 8, base: 50,

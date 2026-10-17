@@ -1,7 +1,7 @@
 // Interfaz: HUD, menús (Batalla, Héroes, Reino), invocación y banners.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { heroPortraitMesh } from './models.js';
+import { heroPortraitMesh } from './characters.js';
 import {
   save, persist, HEROES, HERO_IDS, RARITY, HERO_MAX, SUMMON_COST, heroLevel, summon, BUILDINGS, buildCost, stats,
 } from './save.js';
@@ -30,11 +30,10 @@ function renderPortraits() {
   const cam = new THREE.PerspectiveCamera(30, c.width / c.height, 0.1, 50);
   for (const id of HERO_IDS) {
     const { mesh, dispose } = heroPortraitMesh(id);
-    const fly = id === 'griffin';
-    mesh.rotation.y = fly ? 0.7 : 0.35;
+    mesh.rotation.y = 0.4;
     scene.add(mesh);
-    cam.position.set(fly ? 1.7 : 0.55, fly ? 1.5 : 1.05, fly ? 3.9 : 2.6);
-    cam.lookAt(0, fly ? 0.6 : 0.62, 0);
+    cam.position.set(0.5, 0.95, 2.5);
+    cam.lookAt(0, 0.55, 0);
     r.render(scene, cam);
     portraits[id] = c.toDataURL('image/png');
     scene.remove(mesh);

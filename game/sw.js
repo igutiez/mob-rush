@@ -1,5 +1,5 @@
 // Sube CACHE al publicar cambios para que los clientes descarguen la nueva versión.
-const CACHE = 'mobrush-v5';
+const CACHE = 'mobrush-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,16 @@ const ASSETS = [
   './js/ui.js',
   './js/save.js',
   './js/audio.js',
+  './js/characters.js',
+  './assets/CREDITS.txt',
+  './assets/Barbarian.glb',
+  './assets/Knight.glb',
+  './assets/Mage.glb',
+  './assets/Rogue.glb',
+  './assets/Rogue_Hooded.glb',
+  './assets/Skeleton_Minion.glb',
+  './assets/Skeleton_Rogue.glb',
+  './assets/Skeleton_Warrior.glb',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
@@ -33,6 +43,8 @@ const ASSETS = [
   './vendor/three/addons/shaders/LuminosityHighPassShader.js',
   './vendor/three/addons/shaders/OutputShader.js',
   './vendor/three/addons/utils/BufferGeometryUtils.js',
+  './vendor/three/addons/utils/SkeletonUtils.js',
+  './vendor/three/addons/loaders/GLTFLoader.js',
 ];
 
 self.addEventListener('install', (e) => {

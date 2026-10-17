@@ -7,3 +7,10 @@ Juego web 3D (PWA) inspirado en las mecánicas de los juegos de multitudes: disp
 - Local: `npm run serve` y abre http://localhost:8080
 - Se publica en GitHub Pages con cada push a `main`.
 - Al cambiar archivos, sube `CACHE` en `game/sw.js` para que los móviles instalados se actualicen.
+
+## Modelos 3D
+
+Los personajes son de los packs **KayKit Adventurers** y **KayKit Skeletons** de [Kay Lousberg](https://www.kaylousberg.com) (licencia CC0), descargados de [KayKit-Game-Assets](https://github.com/KayKit-Game-Assets).
+
+- Los originales van en `assets-src/kaykit/` (no se suben) y `npm run models` los recorta a `game/assets/`.
+- La multitud usa animación horneada en texturas (VAT): cientos de personajes animados en una sola llamada de dibujo.

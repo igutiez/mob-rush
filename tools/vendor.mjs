@@ -12,6 +12,8 @@ const entry = [
   'environments/RoomEnvironment.js',
   'utils/BufferGeometryUtils.js',
   'geometries/RoundedBoxGeometry.js',
+  'loaders/GLTFLoader.js',
+  'utils/SkeletonUtils.js',
 ];
 
 rmSync(out, { recursive: true, force: true });

@@ -1,10 +1,18 @@
 // Sube CACHE al publicar cambios para que los clientes descarguen la nueva versión.
-const CACHE = 'mobrush-v3';
+const CACHE = 'mobrush-v5';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './game.js',
+  './js/main.js',
+  './js/engine.js',
+  './js/world.js',
+  './js/bases.js',
+  './js/models.js',
+  './js/fx.js',
+  './js/ui.js',
+  './js/save.js',
+  './js/audio.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',

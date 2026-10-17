@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Mob Rush</title>
-  <meta name="description" content="Dispara tu ejército, multiplícalo en las puertas y derriba la base enemiga.">
+  <meta name="description" content="Dispara tu ejército, multiplícalo en las puertas, invoca héroes y derriba la fortaleza enemiga.">
   <meta name="theme-color" content="#1d4fd6">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -17,6 +17,7 @@
 </head>
 <body>
   <canvas id="game"></canvas>
+  <div id="popups"></div>
   <div id="flash" class="flash"></div>
 
   <div id="hud">
@@ -26,24 +27,55 @@
       <div class="pill coins"><i></i><span id="coins">0</span></div>
     </div>
     <div id="stages" class="stages"></div>
+    <div id="wallhud" class="wallhud hidden">🧱 <span></span></div>
     <div id="banner" class="banner"><b></b><span></span></div>
     <button id="mute" class="icon" aria-label="Sonido">🔊</button>
-    <button id="giant" class="giant" aria-label="Lanzar gigante"><span>GIGANTE</span></button>
+    <button id="giant" class="giant" aria-label="Lanzar héroe"><img alt=""><span>HÉROE</span></button>
   </div>
 
   <div id="overlay" class="overlay show">
     <div class="panel">
-      <h1 id="ov-title">Mob Rush</h1>
-      <p id="ov-sub">Arrastra para apuntar · mantén pulsado para disparar</p>
-      <div class="upgrades">
-        <button id="up-rate" class="up"><b>Cadencia</b><small></small><em></em></button>
-        <button id="up-giant" class="up"><b>Gigante</b><small></small><em></em></button>
-      </div>
-      <button id="play" class="primary">Jugar</button>
+      <nav class="tabs">
+        <button data-tab="battle" class="on">⚔️ Batalla</button>
+        <button data-tab="heroes">🦸 Héroes</button>
+        <button data-tab="kingdom">🏰 Reino</button>
+      </nav>
+
+      <section class="tab on" id="tab-battle">
+        <h1 id="ov-title">Mob Rush</h1>
+        <p id="ov-sub"></p>
+        <div class="equipped" id="equipped">
+          <img alt="">
+          <div><small>Héroe equipado</small><b></b><span></span></div>
+        </div>
+        <button id="play" class="primary">Jugar</button>
+      </section>
+
+      <section class="tab" id="tab-heroes">
+        <div class="hero-grid" id="hero-grid"></div>
+        <button id="summon" class="primary summon">✨ Invocar héroe <em></em></button>
+      </section>
+
+      <section class="tab" id="tab-kingdom">
+        <div class="build-list" id="build-list"></div>
+      </section>
+
+      <div class="wallet"><i></i><span id="ov-coins">0</span></div>
     </div>
   </div>
 
-  <div id="loader" class="loader"><b>Mob Rush</b><span>Cargando…</span></div>
+  <div id="reveal" class="reveal">
+    <div class="reveal-card">
+      <div class="rays"></div>
+      <img alt="">
+      <em></em>
+      <b></b>
+      <span></span>
+      <button class="primary">¡A la batalla!</button>
+    </div>
+  </div>
+
+  <div id="loader" class="loader"><b>Mob Rush</b><span>Forjando el reino…</span></div>
 
   <script type="importmap">
     {
@@ -53,7 +85,7 @@
       }
     }
   </script>
-  <script type="module" src="game.js"></script>
+  <script type="module" src="js/main.js"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

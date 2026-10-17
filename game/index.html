@@ -89,7 +89,14 @@
         if (window.__booted || shown) return;
         shown = true;
         var e = document.getElementById('boot-error');
-        e.textContent = msg ? 'No se pudo arrancar: ' + msg : 'Está tardando demasiado.';
+        if (/webgl/i.test(msg || '')) {
+          e.innerHTML = '<b style="font-size:16px">El navegador ha bloqueado los gráficos 3D</b><br>'
+            + 'Suele pasar después de un fallo de la tarjeta gráfica. Cierra el navegador del todo '
+            + '(quítalo de las apps recientes) o reinicia el móvil y vuelve a abrir el juego.<br>'
+            + 'Si sigue igual, en Chrome abre chrome://flags y comprueba que «WebGL» no esté desactivado.';
+        } else {
+          e.textContent = msg ? 'No se pudo arrancar: ' + msg : 'Está tardando demasiado.';
+        }
         document.getElementById('boot-fix').classList.remove('hidden');
       }
       window.__bootFail = function (err) { fail(String((err && err.message) || err)); };
@@ -101,10 +108,15 @@
       window.addEventListener('unhandledrejection', function (ev) { fail(String((ev.reason && ev.reason.message) || ev.reason)); });
       setTimeout(function () { fail(''); }, 25000);
       document.getElementById('boot-fix').addEventListener('click', function () {
+        var btn = document.getElementById('boot-fix');
+        btn.textContent = 'Reparando…';
+        btn.disabled = true;
+        var go = function () { location.replace(location.pathname + '?r=' + Date.now()); };
+        setTimeout(go, 2500);
         var jobs = [];
         if ('serviceWorker' in navigator) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
         if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
-        Promise.all(jobs).finally(function () { location.reload(); });
+        Promise.all(jobs).then(go, go);
       });
     })();
   </script>

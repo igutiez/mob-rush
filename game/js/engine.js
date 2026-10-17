@@ -26,7 +26,23 @@ export function mulberry32(a) {
 export const canvas = document.getElementById('game');
 // En móviles se reduce la carga gráfica (resolución, sombras y antialiasing)
 export const MOBILE = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 820;
-export const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+// Se prueba de la configuración más exigente a la más simple: algunos móviles rechazan
+// 'high-performance' o el contexto tras un fallo previo de la GPU.
+function createRenderer() {
+  const attempts = [
+    { canvas, antialias: false, powerPreference: 'high-performance' },
+    { canvas, antialias: false },
+    { canvas, antialias: false, powerPreference: 'low-power', depth: true, stencil: false, failIfMajorPerformanceCaveat: false },
+  ];
+  let last;
+  for (const opts of attempts) {
+    try { return new THREE.WebGLRenderer(opts); } catch (e) { last = e; }
+  }
+  const err = new Error('WEBGL_UNAVAILABLE');
+  err.cause = last;
+  throw err;
+}
+export const renderer = createRenderer();
 let pixelRatio = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 1.75);
 renderer.setPixelRatio(pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;

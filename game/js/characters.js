@@ -82,7 +82,9 @@ function vatPatch(uniforms) {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + VAT_GLSL)
-      .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = normalize(mix(vatGet(vatNrm, aVat.x), vatGet(vatNrm, aVat.y), aVat.z));')
+      .replace('#include <beginnormal_vertex>', `vec3 objectNormal = mix(vatGet(vatNrm, aVat.x), vatGet(vatNrm, aVat.y), aVat.z);
+        float nLen = length(objectNormal);
+        objectNormal = nLen > 1e-4 ? objectNormal / nLen : vec3(0.0, 1.0, 0.0);`)
       .replace('#include <begin_vertex>', 'vec3 transformed = mix(vatGet(vatPos, aVat.x), vatGet(vatPos, aVat.y), aVat.z);');
   };
 }
@@ -168,10 +170,14 @@ function bakeCrowd(def) {
     for (let i = 0; i < fr.length; i += 3) {
       scaled[i] = fr[i] * s; scaled[i + 1] = (fr[i + 1] - minY) * s; scaled[i + 2] = fr[i + 2] * s;
     }
+    for (let i = 0; i < scaled.length; i++) if (!Number.isFinite(scaled[i])) scaled[i] = 0;
     tmp.setAttribute('position', new THREE.BufferAttribute(scaled, 3));
     tmp.computeVertexNormals();
     const nn = tmp.attributes.normal.array;
     for (let i = 0; i < V; i++) {
+      // Vértices degenerados: normal hacia arriba en vez de (0,0,0) o NaN
+      const l = Math.hypot(nn[i * 3], nn[i * 3 + 1], nn[i * 3 + 2]);
+      if (!(l > 1e-4)) { nn[i * 3] = 0; nn[i * 3 + 1] = 1; nn[i * 3 + 2] = 0; }
       const o = (f * V + i) * 4;
       pos[o] = scaled[i * 3]; pos[o + 1] = scaled[i * 3 + 1]; pos[o + 2] = scaled[i * 3 + 2]; pos[o + 3] = 1;
       nrm[o] = THREE.DataUtils.toHalfFloat(nn[i * 3]);

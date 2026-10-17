@@ -48,6 +48,8 @@ export const CAM_LOOK = new THREE.Vector3(0, 0, 15);
 export const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType }));
 composer.addPass(new RenderPass(scene, camera));
 export const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.5, 1.0);
+// ?nobloom desactiva el brillo (diagnóstico en móviles)
+bloom.enabled = !new URLSearchParams(location.search).has('nobloom');
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
@@ -242,4 +244,27 @@ const projV = new THREE.Vector3();
 export function toScreen(x, y, z) {
   projV.set(X(x), y, z).project(camera);
   return { x: (projV.x * 0.5 + 0.5) * view.w, y: (-projV.y * 0.5 + 0.5) * view.h, visible: projV.z < 1 };
+}
+
+// ---------- Diagnóstico: ?debug muestra errores y datos de la GPU en pantalla ----------
+if (new URLSearchParams(location.search).has('debug')) {
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;left:6px;right:6px;bottom:120px;max-height:40%;overflow:auto;z-index:20;margin:0;padding:8px;'
+    + 'background:rgba(0,0,0,.75);color:#9f9;font:11px/1.35 monospace;white-space:pre-wrap;pointer-events:auto;border-radius:8px';
+  document.body.appendChild(box);
+  const log = (kind, args) => { box.textContent += `[${kind}] ${args.map((a) => (a && a.message) || String(a)).join(' ')}\n`; };
+  for (const kind of ['error', 'warn']) {
+    const orig = console[kind].bind(console);
+    console[kind] = (...args) => { log(kind, args); orig(...args); };
+  }
+  window.addEventListener('error', (e) => log('onerror', [e.message]));
+  const gl = renderer.getContext();
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  log('gpu', [dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), '| webgl2:', renderer.capabilities.isWebGL2,
+    '| maxTex:', renderer.capabilities.maxTextureSize, '| vtxTex:', renderer.capabilities.maxVertexTextures, '| dpr:', window.devicePixelRatio]);
+  renderer.debug.checkShaderErrors = true;
+  setInterval(() => {
+    const i = renderer.info;
+    box.dataset.info = `calls ${i.render.calls} tris ${i.render.triangles} prog ${i.programs?.length}`;
+  }, 1000);
 }

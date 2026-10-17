@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { scene, shadowed } from './engine.js';
+import { scene, shadowed, HQ, safeTexture, crumb } from './engine.js';
 
 const FILES = ['Knight', 'Barbarian', 'Mage', 'Rogue', 'Rogue_Hooded', 'Skeleton_Minion', 'Skeleton_Rogue', 'Skeleton_Warrior'];
 const gltfs = {};
@@ -40,10 +40,14 @@ export async function loadCharacters(onProgress = () => {}) {
       if (o.isMesh) {
         o.material.roughness = 0.62;
         o.material.metalness = 0.05;
+        safeTexture(o.material.map);
       }
     });
   }
   for (const [key, def] of Object.entries(TROOP_DEFS)) crowds[key] = bakeCrowd(def);
+  if (!HQ) {
+    for (const [key, def] of Object.entries(HERO_DEFS)) crowds['hero_' + key] = bakeCrowd({ ...def, run: 'Running_A', rate: 1, max: 6 });
+  }
   onProgress(1);
 }
 
@@ -159,7 +163,7 @@ function bakeCrowd(def) {
     scene.add(mesh);
     return mesh;
   });
-  return { poses, counts: new Int32Array(poses.length), def, clips, n: 0 };
+  return { poses, counts: new Int32Array(poses.length), def, clips, n: 0, firstShown: false };
 }
 
 export function beginCrowd(c) {
@@ -178,6 +182,7 @@ export function addToCrowd(c, matrix, time, attacking) {
 }
 
 export function endCrowd(c) {
+  if (c.n && !c.firstShown) { c.firstShown = true; crumb(`primer dibujo de ${c.def.file}`); }
   for (let i = 0; i < c.poses.length; i++) {
     const m = c.poses[i];
     m.count = c.counts[i];
@@ -200,7 +205,7 @@ const ringTex = (() => {
   g.fillRect(0, 0, 128, 128);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  return safeTexture(t);
 })();
 function makeRings(color, max) {
   const m = new THREE.InstancedMesh(
@@ -238,7 +243,32 @@ function heroRig(type, height) {
   return root;
 }
 
+// Héroe en modo seguro: sin esqueleto (sin texturas de huesos), usa poses precalculadas
+function createHeroLite(type) {
+  const def = HERO_DEFS[type];
+  const crowd = crowds['hero_' + type];
+  const group = new THREE.Group();
+  const auraMat = new THREE.MeshBasicMaterial({ color: def.aura, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending });
+  const aura = new THREE.Mesh(auraGeo, auraMat);
+  aura.position.y = 0.05;
+  aura.scale.setScalar(def.height);
+  group.add(aura);
+  scene.add(group);
+  const st = { key: 'run', speed: 1, t: Math.random() };
+  return {
+    group, body: group, aura,
+    play(key, speed = 1) { st.key = key; st.speed = speed; },
+    update(dt) {
+      st.t += dt * st.speed;
+      group.updateMatrixWorld();
+      if (crowd.n < crowd.def.max) addToCrowd(crowd, group.matrixWorld, st.t, st.key === 'attack');
+    },
+    dispose() { group.removeFromParent(); auraMat.dispose(); },
+  };
+}
+
 export function createHero(type) {
+  if (!HQ) return createHeroLite(type);
   const def = HERO_DEFS[type];
   const src = gltfs[def.file];
   const group = new THREE.Group();
@@ -282,6 +312,12 @@ export function createHero(type) {
 // Personaje posado para los retratos del menú (altura 1)
 export function heroPortraitMesh(type) {
   const def = HERO_DEFS[type];
+  if (!HQ) {
+    const pose = crowds['hero_' + type].poses[0];
+    const mesh = new THREE.Mesh(pose.geometry, pose.material);
+    mesh.scale.setScalar(1 / def.height);
+    return { mesh, dispose: () => {} };
+  }
   const body = heroRig(type, 1.0);
   const mixer = new THREE.AnimationMixer(body);
   const clip = THREE.AnimationClip.findByName(gltfs[def.file].animations, 'Idle');

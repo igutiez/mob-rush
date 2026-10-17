@@ -26,11 +26,23 @@ export function mulberry32(a) {
 export const canvas = document.getElementById('game');
 // En móviles se reduce la carga gráfica (resolución, sombras y antialiasing)
 export const MOBILE = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 820;
+
+// Calidad gráfica: 'high' (brillo con posprocesado y sombras) o 'low' (dibujo directo, sin sombras).
+// En móvil se empieza en 'low'; se puede cambiar desde el menú o con ?q=high / ?q=low.
+const QKEY = 'mobrush-quality';
+let storedQ = null;
+try { storedQ = localStorage.getItem(QKEY); } catch (e) { /* sin almacenamiento */ }
+export const QUALITY = new URLSearchParams(location.search).get('q') || storedQ || (MOBILE ? 'low' : 'high');
+export const HQ = QUALITY === 'high';
+export function setQuality(q) {
+  try { localStorage.setItem(QKEY, q); } catch (e) { /* ignorar */ }
+  location.replace(location.pathname);
+}
 // Se prueba de la configuración más exigente a la más simple: algunos móviles rechazan
 // 'high-performance' o el contexto tras un fallo previo de la GPU.
 function createRenderer() {
   const attempts = [
-    { canvas, antialias: false, powerPreference: 'high-performance' },
+    { canvas, antialias: false, powerPreference: HQ ? 'high-performance' : 'default' },
     { canvas, antialias: false },
     { canvas, antialias: false, powerPreference: 'low-power', depth: true, stencil: false, failIfMajorPerformanceCaveat: false },
   ];
@@ -43,12 +55,19 @@ function createRenderer() {
   throw err;
 }
 export const renderer = createRenderer();
-let pixelRatio = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 1.75);
+export const GPU_NAME = (() => {
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  } catch (e) { return '?'; }
+})();
+let pixelRatio = Math.min(window.devicePixelRatio || 1, HQ ? (MOBILE ? 1.5 : 1.75) : 1.25);
 renderer.setPixelRatio(pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = HQ;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 export const scene = new THREE.Scene();
@@ -63,13 +82,30 @@ export const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 400);
 export const CAM_BASE = new THREE.Vector3(0, 12.5, -10.5);
 export const CAM_LOOK = new THREE.Vector3(0, 0, 15);
 
-export const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: MOBILE ? 2 : 4, type: THREE.HalfFloatType }));
-composer.addPass(new RenderPass(scene, camera));
-export const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.5, 1.0);
-// ?nobloom desactiva el brillo (diagnóstico en móviles)
-bloom.enabled = !new URLSearchParams(location.search).has('nobloom');
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
+// Posprocesado (brillo) solo en calidad alta; en baja se dibuja directo a pantalla.
+export const composer = HQ ? new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: MOBILE ? 2 : 4, type: THREE.HalfFloatType })) : null;
+export const bloom = HQ ? new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.5, 1.0) : { threshold: 1, enabled: false, resolution: { set() {} } };
+if (composer) {
+  composer.addPass(new RenderPass(scene, camera));
+  bloom.enabled = !new URLSearchParams(location.search).has('nobloom');
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+}
+// En modo seguro no se generan mipmaps (generateMipmap provoca pérdidas de contexto en algunos Android)
+export function safeTexture(t) {
+  if (HQ || !t) return t;
+  t.generateMipmaps = false;
+  t.minFilter = THREE.LinearFilter;
+  return t;
+}
+
+// Rastro de lo que estaba haciendo el juego, para saber en qué momento se cae la GPU
+export const crumb = (what) => { window.__crumb = what; };
+
+export function render() {
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
+}
 
 // Recursos con ciclo de vida: se liberan al cambiar de mundo ('env'), de fase ('stage') o de base ('base')
 export const scopes = { env: [], stage: [], base: [] };
@@ -125,7 +161,7 @@ scene.add(hemi);
 export const sun = new THREE.DirectionalLight('#fff4e0', 2.1);
 sun.position.set(-14, 26, -6);
 sun.target.position.set(0, 0, 20);
-sun.castShadow = true;
+sun.castShadow = HQ;
 sun.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 34, bottom: -34, near: 1, far: 90 });
 sun.shadow.bias = -0.0004;
@@ -140,7 +176,8 @@ export function canvasTex(w, h, draw, repeat) {
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.anisotropy = HQ ? renderer.capabilities.getMaxAnisotropy() : 1;
+  safeTexture(t);
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
   return t;
 }
@@ -240,8 +277,10 @@ export function resize() {
   renderer.setSize(w, h, false);
   canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
-  composer.setPixelRatio(pixelRatio);
-  composer.setSize(w, h);
+  if (composer) {
+    composer.setPixelRatio(pixelRatio);
+    composer.setSize(w, h);
+  }
   bloom.resolution.set(w / 2, h / 2);
   view.worldPerPx = (2 * dist * Math.tan(vfov / 2)) / h;
   view.w = w; view.h = h;
@@ -267,10 +306,13 @@ export function toScreen(x, y, z) {
 // ---------- Si la GPU se bloquea y se pierde el contexto 3D, avisar y ofrecer recargar ----------
 canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault();
+  try { localStorage.setItem(QKEY, 'low'); } catch (err) { /* ignorar */ }
+  const info = `GPU: ${GPU_NAME} · calidad: ${QUALITY} · momento: ${window.__crumb || '?'}`;
   const box = document.createElement('div');
   box.className = 'overlay show';
   box.style.zIndex = 30;
-  box.innerHTML = '<div class="panel" style="text-align:center"><h1>Ups</h1><p>La tarjeta gráfica del móvil se ha reiniciado.</p>'
+  box.innerHTML = '<div class="panel" style="text-align:center"><h1>Ups</h1><p>La tarjeta gráfica del móvil se ha reiniciado. Al recargar se usarán gráficos bajos.</p>'
+    + '<p style="font-size:12px;opacity:.85;user-select:text;-webkit-user-select:text">' + info + '</p>'
     + '<button class="primary" onclick="location.reload()">Recargar</button></div>';
   document.body.appendChild(box);
 }, false);

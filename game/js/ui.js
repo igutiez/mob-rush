@@ -1,6 +1,6 @@
 // Interfaz: HUD, menús (Batalla, Héroes, Reino), invocación y banners.
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { renderer, envTexture, resize, QUALITY, setQuality } from './engine.js';
 import { heroPortraitMesh } from './characters.js';
 import {
   save, persist, HEROES, HERO_IDS, RARITY, HERO_MAX, SUMMON_COST, heroLevel, summon, BUILDINGS, buildCost, stats,
@@ -12,14 +12,19 @@ const $ = (id) => document.getElementById(id);
 // ---------- Retratos 3D de los héroes (render único a imagen) ----------
 export const portraits = {};
 function renderPortraits() {
-  const c = document.createElement('canvas');
-  c.width = 320; c.height = 400;
-  const r = new THREE.WebGLRenderer({ canvas: c, antialias: true, alpha: true, preserveDrawingBuffer: true });
-  r.toneMapping = THREE.ACESFilmicToneMapping;
-  r.outputColorSpace = THREE.SRGBColorSpace;
+  // Se dibujan con el renderer del juego (un solo contexto WebGL) y se copian a imagen.
+  const W = 320, H = 400;
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const ctx = out.getContext('2d');
+  const pr = renderer.getPixelRatio();
+  const shadows = renderer.shadowMap.enabled;
+  renderer.shadowMap.enabled = false;
+  renderer.setPixelRatio(1);
+  renderer.setSize(W, H, false);
   const scene = new THREE.Scene();
-  const pm = new THREE.PMREMGenerator(r);
-  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.background = new THREE.Color('#22356e');
+  scene.environment = envTexture;
   scene.environmentIntensity = 0.7;
   scene.add(new THREE.HemisphereLight('#e8f0ff', '#2a2050', 1.2));
   const key = new THREE.DirectionalLight('#fff2dd', 2.6);
@@ -27,21 +32,22 @@ function renderPortraits() {
   const rim = new THREE.DirectionalLight('#7ab0ff', 2.2);
   rim.position.set(-3, 2, -3);
   scene.add(key, rim);
-  const cam = new THREE.PerspectiveCamera(30, c.width / c.height, 0.1, 50);
+  const cam = new THREE.PerspectiveCamera(30, W / H, 0.1, 50);
+  cam.position.set(0.5, 0.95, 2.5);
+  cam.lookAt(0, 0.55, 0);
   for (const id of HERO_IDS) {
     const { mesh, dispose } = heroPortraitMesh(id);
     mesh.rotation.y = 0.4;
     scene.add(mesh);
-    cam.position.set(0.5, 0.95, 2.5);
-    cam.lookAt(0, 0.55, 0);
-    r.render(scene, cam);
-    portraits[id] = c.toDataURL('image/png');
+    renderer.render(scene, cam);
+    ctx.drawImage(renderer.domElement, 0, 0, W, H);
+    portraits[id] = out.toDataURL('image/png');
     scene.remove(mesh);
     dispose();
   }
-  pm.dispose();
-  r.dispose();
-  r.forceContextLoss();
+  renderer.shadowMap.enabled = shadows;
+  renderer.setPixelRatio(pr);
+  resize();
 }
 
 // ---------- Menú ----------
@@ -49,7 +55,7 @@ let onPlay = () => {};
 
 export function initUI(opts) {
   onPlay = opts.onPlay;
-  try { renderPortraits(); } catch (e) { /* sin retratos si falla el segundo contexto WebGL */ }
+  try { renderPortraits(); } catch (e) { resize(); /* sin retratos */ }
 
   document.querySelectorAll('.tabs button').forEach((b) => {
     b.addEventListener('click', () => {
@@ -66,6 +72,9 @@ export function initUI(opts) {
     refreshMenu();
   });
   $('mute').addEventListener('click', () => { save.muted = !save.muted; persist(); ensureAudio(); });
+  const q = $('quality');
+  q.textContent = QUALITY === 'high' ? '🎨 Gráficos: altos · cambiar a bajos' : '🎨 Gráficos: bajos · cambiar a altos';
+  q.addEventListener('click', () => setQuality(QUALITY === 'high' ? 'low' : 'high'));
   refreshMenu();
   refreshHeroButton();
 }

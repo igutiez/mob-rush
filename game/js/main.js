@@ -1,8 +1,8 @@
 // Núcleo del juego: estado, simulación, héroes, proyectiles y bucle principal.
 import * as THREE from 'three';
 import {
-  HALF, LEN, CANNON_Z, X, mulberry32, canvas, renderer, composer, camera, CAM_BASE, CAM_LOOK,
-  freeScope, resize, lowerQuality, view,
+  HALF, LEN, CANNON_Z, X, mulberry32, canvas, renderer, render, camera, CAM_BASE, CAM_LOOK,
+  freeScope, resize, lowerQuality, view, HQ, crumb,
 } from './engine.js';
 import { themeFor, isBoss, stagesFor, buildEnvironment, updateWeather, updateClouds, setWorldTime } from './world.js';
 import { buildBase, baseView } from './bases.js';
@@ -33,8 +33,9 @@ const UNIT = {
   mage: { team: 0, r: 0.5, speed: 3.2, big: true, hero: true },
   rogue: { team: 0, r: 0.5, speed: 5.2, big: true, hero: true, ghost: true },
 };
-const MAX_BLUE = 700;
-const MAX_RED = 420;
+// En modo seguro (móvil) hay menos unidades a la vez para no saturar la GPU
+const MAX_BLUE = HQ ? 700 : 360;
+const MAX_RED = HQ ? 420 : 260;
 
 const heroStats = (id, L) => ({
   king: { hp: 22 + 6 * L, radius: 2.3 + 0.12 * L, cd: 2.0 },
@@ -280,6 +281,7 @@ function updateShots(dt) {
 // ---------- Héroes ----------
 function spawnHero() {
   const id = save.hero;
+  crumb(`héroe ${id}`);
   const L = Math.max(1, heroLevel(id));
   const st = heroStats(id, L);
   const u = addUnit(id, cannon.x, CANNON_Z + 1.2, { hp: st.hp });
@@ -719,6 +721,7 @@ function updateTransition(dt) {
     return;
   }
   if (!trans.rebuilt) {
+    crumb('cambio de fase');
     trans.rebuilt = true;
     stage++;
     buildStage(save.level, stage);
@@ -886,6 +889,7 @@ function syncScene(dt) {
 // ============================================================
 function startGame() {
   ensureAudio();
+  crumb(`inicio nivel ${save.level}`);
   buildLevel(save.level);
   G.state = 'play';
   endTimer = 0;
@@ -957,7 +961,7 @@ renderer.setAnimationLoop(() => {
   else if (G.state === 'transition') updateTransition(dt);
   else updateIdle(dt);
   syncScene(dt);
-  composer.render();
+  render();
   updateHud(G);
   if (!perfDone && G.state === 'play') {
     perfFrames++; perfTime += real;

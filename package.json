@@ -1,0 +1,14 @@
+{
+  "name": "mob-rush",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "vendor": "node tools/vendor.mjs",
+    "icons": "node tools/make-icons.mjs",
+    "serve": "python3 -m http.server 8080 --directory game"
+  },
+  "devDependencies": {
+    "three": "^0.170.0"
+  }
+}

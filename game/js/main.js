@@ -144,18 +144,18 @@ function buildStage(n, s) {
   }
 
   const boss = isBoss(n);
-  const hp = Math.round((60 + n * 30) * (1 + s * 0.3) * (boss ? 2.6 : 1));
+  const hp = Math.round((60 + n * 26) * (1 + s * 0.25) * (boss ? 1.5 : 1));
   G.base = { hp, max: hp, flash: 0, wobble: 0 };
   spawner = {
     timer: 2.4, queue: 0, gap: 0, wave: 0,
-    interval: Math.max(1.2, 3.4 - n * 0.12 - s * 0.2),
-    size: 3 + Math.floor(n * 1.1) + s * 2,
+    interval: Math.max(1.8, 3.6 - n * 0.07 - s * 0.15),
+    size: 3 + Math.floor(n * 0.6) + s,
     scoutChance: n >= 3 ? Math.min(0.4, 0.15 + n * 0.02) : 0,
-    ogreEvery: boss ? 2 : n >= 4 ? 3 : 0,
-    ogreHp: (boss ? 14 : 8) + n,
+    ogreEvery: boss ? 3 : n >= 4 ? 4 : 0,
+    ogreHp: (boss ? 10 : 6) + Math.floor(n * 0.6),
     bossPending: boss,
     towerTimer: 3,
-    towerInterval: n < 2 ? 0 : Math.max(0.45, 1.9 - n * 0.08),
+    towerInterval: n < 2 ? 0 : Math.max(0.9, 2.2 - n * 0.05),
   };
   buildBase(themeFor(n).base);
   fireTimer = 0;
@@ -505,12 +505,12 @@ function update(dt) {
   sp.timer -= dt;
   if (sp.timer <= 0) {
     sp.wave++;
-    sp.queue += sp.size + Math.floor(sp.wave / 3);
+    sp.queue += sp.size + Math.min(6, Math.floor(sp.wave / 4));
     sp.timer = sp.interval;
     if (sp.ogreEvery && sp.wave % sp.ogreEvery === 0) addUnit('ogre', (Math.random() - 0.5) * 2, LEN - 1, { hp: sp.ogreHp });
     if (sp.bossPending && sp.wave === 2) {
       sp.bossPending = false;
-      addUnit('boss', 0, LEN - 1.2, { hp: 60 + save.level * 8 });
+      addUnit('boss', 0, LEN - 1.2, { hp: 40 + save.level * 4 });
       showBanner('¡Señor de la guerra!', 'Ha salido de la fortaleza', 'boss');
       boom(0.3, 1.2, 400);
       cam.shake = 0.6;
@@ -981,6 +981,10 @@ window.__mobrush = {
   get units() { return units.length; },
   get base() { return G.base; },
   get stage() { return stage; },
+  get gates() { return gates.map((g) => ({ x: g.x, z: g.z, w: g.w, kind: g.op.kind, v: g.op.v })); },
+  get counts() { return { blue: blueCount, red: redCount }; },
+  aim(x) { cannon.tx = x; },
+  fire(on) { firing = on; },
   save,
   goto(n) { save.level = n; persist(); startGame(); },
   hero() { G.charge = stats.chargeMax(); launchHero(); },

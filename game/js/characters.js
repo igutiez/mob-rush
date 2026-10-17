@@ -1,5 +1,5 @@
 // Personajes con modelos KayKit (CC0, Kay Lousberg).
-// - Multitudes: las animaciones se hornean en texturas (VAT) y se dibujan instanciadas en la GPU.
+// - Multitudes: poses precalculadas e instanciadas (compatibles con cualquier GPU).
 // - Héroes: malla con esqueleto y AnimationMixer (pocos a la vez).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -9,7 +9,6 @@ import { scene, shadowed } from './engine.js';
 
 const FILES = ['Knight', 'Barbarian', 'Mage', 'Rogue', 'Rogue_Hooded', 'Skeleton_Minion', 'Skeleton_Rogue', 'Skeleton_Warrior'];
 const gltfs = {};
-const FPS = 24;
 
 // Tropas (multitud instanciada)
 export const TROOP_DEFS = {
@@ -63,34 +62,13 @@ function buildRig(def) {
 }
 
 // ============================================================
-// VAT: animación horneada en texturas
+// Multitudes: poses precalculadas
+// Cada pose de la animación se convierte en una malla normal; los personajes se agrupan
+// según la pose en la que están (una InstancedMesh por pose). Sin sombreadores especiales:
+// funciona en cualquier GPU de móvil.
 // ============================================================
-const VAT_GLSL = /* glsl */ `
-uniform highp sampler2D vatPos;
-uniform highp sampler2D vatNrm;
-uniform int vatW;
-uniform int vatV;
-attribute vec3 aVat;
-vec3 vatGet(highp sampler2D tex, float frame) {
-  int idx = int(frame) * vatV + gl_VertexID;
-  return texelFetch(tex, ivec2(idx % vatW, idx / vatW), 0).xyz;
-}
-`;
-
-function vatPatch(uniforms) {
-  return (shader) => {
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\n' + VAT_GLSL)
-      .replace('#include <beginnormal_vertex>', `vec3 objectNormal = mix(vatGet(vatNrm, aVat.x), vatGet(vatNrm, aVat.y), aVat.z) * 2.0 - 1.0;
-        float nLen = length(objectNormal);
-        objectNormal = nLen > 1e-4 ? objectNormal / nLen : vec3(0.0, 1.0, 0.0);`)
-      .replace('#include <begin_vertex>', 'vec3 transformed = mix(vatGet(vatPos, aVat.x), vatGet(vatPos, aVat.y), aVat.z);');
-    // Red de seguridad: un píxel inválido (NaN) se pintaría en blanco por toda la pantalla con el brillo
-    shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>',
-      '#include <dithering_fragment>\n  if (any(isnan(gl_FragColor)) || any(isinf(gl_FragColor))) gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0);');
-  };
-}
+const RUN_POSES = 14;
+const ATTACK_POSES = 10;
 
 const tmpV = new THREE.Vector3();
 function samplePositions(meshes, V) {
@@ -123,7 +101,6 @@ function bakeCrowd(def) {
   const geos = meshes.map((m) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', m.geometry.attributes.position.clone());
-    g.setAttribute('normal', m.geometry.attributes.normal.clone());
     g.setAttribute('uv', m.geometry.attributes.uv.clone());
     g.setIndex(m.geometry.index.clone());
     const key = m.material.map ? m.material.map.uuid : m.material.uuid;
@@ -131,17 +108,16 @@ function bakeCrowd(def) {
     g.userData.mat = matIndex.get(key);
     return g;
   });
-  const geo = mergeGeometries(geos, true);
-  geo.groups.forEach((gr, i) => { gr.materialIndex = geos[i].userData.mat; });
-  const V = geo.attributes.position.count;
+  const base = mergeGeometries(geos, true);
+  base.groups.forEach((gr, i) => { gr.materialIndex = geos[i].userData.mat; });
+  const V = base.attributes.position.count;
 
-  // Fotogramas de cada animación
+  // Poses de cada animación
   const mixer = new THREE.AnimationMixer(root);
   const frames = [];
   const clips = {};
-  for (const [key, name] of [['run', def.run], ['attack', def.attack]]) {
+  for (const [key, name, n] of [['run', def.run, RUN_POSES], ['attack', def.attack, ATTACK_POSES]]) {
     const clip = THREE.AnimationClip.findByName(src.animations, name);
-    const n = Math.max(8, Math.round(clip.duration * FPS));
     mixer.stopAllAction();
     const action = mixer.clipAction(clip);
     action.play();
@@ -160,61 +136,54 @@ function bakeCrowd(def) {
   for (let i = 1; i < f0.length; i += 3) { minY = Math.min(minY, f0[i]); maxY = Math.max(maxY, f0[i]); }
   const s = def.height / (maxY - minY);
 
-  // Normales por fotograma
-  const tmp = new THREE.BufferGeometry();
-  tmp.setIndex(geo.index);
-  const W = 2048;
-  const total = frames.length * V;
-  const H = Math.ceil(total / W);
-  const pos = new Float32Array(W * H * 4);
-  const nrm = new Uint8Array(W * H * 4);
-  frames.forEach((fr, f) => {
-    const scaled = new Float32Array(fr.length);
+  const materials = mats.map((m) => new THREE.MeshStandardMaterial({ map: m.map, color: def.tint || '#ffffff', roughness: 0.62, metalness: 0.05 }));
+  const sphere = new THREE.Sphere(new THREE.Vector3(0, def.height / 2, 0), def.height * 1.5);
+  const poses = frames.map((fr) => {
+    const pos = new Float32Array(fr.length);
     for (let i = 0; i < fr.length; i += 3) {
-      scaled[i] = fr[i] * s; scaled[i + 1] = (fr[i + 1] - minY) * s; scaled[i + 2] = fr[i + 2] * s;
+      pos[i] = fr[i] * s; pos[i + 1] = (fr[i + 1] - minY) * s; pos[i + 2] = fr[i + 2] * s;
     }
-    for (let i = 0; i < scaled.length; i++) if (!Number.isFinite(scaled[i])) scaled[i] = 0;
-    tmp.setAttribute('position', new THREE.BufferAttribute(scaled, 3));
-    tmp.computeVertexNormals();
-    const nn = tmp.attributes.normal.array;
-    for (let i = 0; i < V; i++) {
-      // Vértices degenerados: normal hacia arriba en vez de (0,0,0) o NaN
-      const l = Math.hypot(nn[i * 3], nn[i * 3 + 1], nn[i * 3 + 2]);
-      if (!(l > 1e-4)) { nn[i * 3] = 0; nn[i * 3 + 1] = 1; nn[i * 3 + 2] = 0; }
-      const o = (f * V + i) * 4;
-      pos[o] = scaled[i * 3]; pos[o + 1] = scaled[i * 3 + 1]; pos[o + 2] = scaled[i * 3 + 2]; pos[o + 3] = 1;
-      nrm[o] = Math.round((nn[i * 3] * 0.5 + 0.5) * 255);
-      nrm[o + 1] = Math.round((nn[i * 3 + 1] * 0.5 + 0.5) * 255);
-      nrm[o + 2] = Math.round((nn[i * 3 + 2] * 0.5 + 0.5) * 255);
-      nrm[o + 3] = 255;
-    }
+    for (let i = 0; i < pos.length; i++) if (!Number.isFinite(pos[i])) pos[i] = 0;
+    const g = new THREE.BufferGeometry();
+    g.setIndex(base.index);
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', base.attributes.uv);
+    for (const gr of base.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
+    g.computeVertexNormals();
+    g.boundingSphere = sphere;
+    const mesh = shadowed(new THREE.InstancedMesh(g, materials, def.max), true, false);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    return mesh;
   });
-  const posTex = new THREE.DataTexture(pos, W, H, THREE.RGBAFormat, THREE.FloatType);
-  const nrmTex = new THREE.DataTexture(nrm, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
-  for (const t of [posTex, nrmTex]) { t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; }
+  return { poses, counts: new Int32Array(poses.length), def, clips, n: 0 };
+}
 
-  const uniforms = { vatPos: { value: posTex }, vatNrm: { value: nrmTex }, vatW: { value: W }, vatV: { value: V } };
-  const patch = vatPatch(uniforms);
-  const materials = mats.map((m) => {
-    const mat = new THREE.MeshStandardMaterial({ map: m.map, color: def.tint || '#ffffff', roughness: 0.62, metalness: 0.05 });
-    mat.onBeforeCompile = patch;
-    return mat;
-  });
-  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
-  depth.onBeforeCompile = patch;
+export function beginCrowd(c) {
+  c.counts.fill(0);
+  c.n = 0;
+}
 
-  const vat = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 3), 3);
-  vat.setUsage(THREE.DynamicDrawUsage);
-  geo.setAttribute('aVat', vat);
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, def.height / 2, 0), def.height * 1.5);
+// Añade una instancia en la pose que toca según su tiempo de animación
+export function addToCrowd(c, matrix, time, attacking) {
+  const clip = attacking ? c.clips.attack : c.clips.run;
+  const ph = ((time / clip.duration) % 1 + 1) % 1;
+  const p = clip.start + Math.min(clip.n - 1, Math.floor(ph * clip.n));
+  const mesh = c.poses[p];
+  mesh.setMatrixAt(c.counts[p]++, matrix);
+  c.n++;
+}
 
-  const mesh = shadowed(new THREE.InstancedMesh(geo, materials, def.max), true, false);
-  mesh.customDepthMaterial = depth;
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.count = 0;
-  mesh.frustumCulled = false;
-  scene.add(mesh);
-  return { mesh, vat, def, clips, n: 0 };
+export function endCrowd(c) {
+  for (let i = 0; i < c.poses.length; i++) {
+    const m = c.poses[i];
+    m.count = c.counts[i];
+    m.visible = m.count > 0;
+    if (m.visible) m.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // Anillos de equipo bajo cada unidad (legibilidad azul contra rojo)
@@ -250,18 +219,6 @@ export const rings = [
   { mesh: makeRings(new THREE.Color(0.5, 1.2, 3.2), 1200), n: 0 },
   { mesh: makeRings(new THREE.Color(3.2, 0.45, 0.35), 800), n: 0 },
 ];
-
-// Escribe el fotograma de animación de la instancia i
-export function writeVat(c, i, time, attacking) {
-  const clip = attacking ? c.clips.attack : c.clips.run;
-  const ph = ((time / clip.duration) % 1 + 1) % 1;
-  const f = ph * clip.n;
-  const a = Math.floor(f);
-  const arr = c.vat.array;
-  arr[i * 3] = clip.start + a;
-  arr[i * 3 + 1] = clip.start + ((a + 1) % clip.n);
-  arr[i * 3 + 2] = f - a;
-}
 
 // ============================================================
 // Héroes con esqueleto completo

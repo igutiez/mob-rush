@@ -10,7 +10,7 @@ import {
   cannonGroup, barrelPivot, sideBarrels, muzzle, muzzleLight,
   wall, wallMat, WALL_Z, gateMeshes, obstacleMeshes, barrelGlow, arrowMesh, MAX_ARROWS, fireMesh, MAX_FIRE, lightPillar,
 } from './models.js';
-import { loadCharacters, crowds, writeVat, createHero, HERO_DEFS, rings } from './characters.js';
+import { loadCharacters, crowds, beginCrowd, addToCrowd, endCrowd, createHero, HERO_DEFS, rings } from './characters.js';
 import { fx, burst, trail, explodeDebris, shockwave, addPillar, clearFx, updateFx, syncFx, popup } from './fx.js';
 import { save, persist, HEROES, heroLevel, stats } from './save.js';
 import { ensureAudio, sfx, boom, fanfare, vibrate } from './audio.js';
@@ -766,7 +766,7 @@ const lookTarget = new THREE.Vector3();
 function syncScene(dt) {
   setWorldTime(t);
 
-  for (const k in crowds) crowds[k].n = 0;
+  for (const k in crowds) beginCrowd(crowds[k]);
   rings[0].n = rings[1].n = 0;
   for (const u of units) {
     const sc = 0.4 + 0.6 * u.spawn;
@@ -791,23 +791,16 @@ function syncScene(dt) {
     }
     const c = crowds[u.type];
     if (!c || c.n >= c.def.max) continue;
-    const i = c.n++;
     u.at += dt * (attacking ? 1.4 : c.def.rate);
     const s = sc * (u.big ? 0.75 + 0.25 * (u.hp / u.maxHp) : 1);
     dummy.position.set(X(u.x), 0, u.z);
     dummy.rotation.set(0, u.team === 0 ? 0 : Math.PI, u.vx * 0.03);
     dummy.scale.setScalar(s);
     dummy.updateMatrix();
-    c.mesh.setMatrixAt(i, dummy.matrix);
-    writeVat(c, i, u.at, attacking);
+    addToCrowd(c, dummy.matrix, u.at, attacking);
   }
   for (const rg of rings) { rg.mesh.count = rg.n; rg.mesh.instanceMatrix.needsUpdate = true; }
-  for (const k in crowds) {
-    const c = crowds[k];
-    c.mesh.count = c.n;
-    c.mesh.instanceMatrix.needsUpdate = true;
-    c.vat.needsUpdate = true;
-  }
+  for (const k in crowds) endCrowd(crowds[k]);
 
   // Proyectiles
   let na = 0, nf = 0;

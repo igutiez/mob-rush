@@ -24,8 +24,10 @@ export function mulberry32(a) {
 }
 
 export const canvas = document.getElementById('game');
+// En móviles se reduce la carga gráfica (resolución, sombras y antialiasing)
+export const MOBILE = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 820;
 export const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
+let pixelRatio = Math.min(window.devicePixelRatio || 1, MOBILE ? 1.5 : 1.75);
 renderer.setPixelRatio(pixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
@@ -45,7 +47,7 @@ export const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 400);
 export const CAM_BASE = new THREE.Vector3(0, 12.5, -10.5);
 export const CAM_LOOK = new THREE.Vector3(0, 0, 15);
 
-export const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType }));
+export const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: MOBILE ? 2 : 4, type: THREE.HalfFloatType }));
 composer.addPass(new RenderPass(scene, camera));
 export const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.5, 1.0);
 // ?nobloom desactiva el brillo (diagnóstico en móviles)
@@ -108,7 +110,7 @@ export const sun = new THREE.DirectionalLight('#fff4e0', 2.1);
 sun.position.set(-14, 26, -6);
 sun.target.position.set(0, 0, 20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 34, bottom: -34, near: 1, far: 90 });
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
@@ -245,6 +247,17 @@ export function toScreen(x, y, z) {
   projV.set(X(x), y, z).project(camera);
   return { x: (projV.x * 0.5 + 0.5) * view.w, y: (-projV.y * 0.5 + 0.5) * view.h, visible: projV.z < 1 };
 }
+
+// ---------- Si la GPU se bloquea y se pierde el contexto 3D, avisar y ofrecer recargar ----------
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  const box = document.createElement('div');
+  box.className = 'overlay show';
+  box.style.zIndex = 30;
+  box.innerHTML = '<div class="panel" style="text-align:center"><h1>Ups</h1><p>La tarjeta gráfica del móvil se ha reiniciado.</p>'
+    + '<button class="primary" onclick="location.reload()">Recargar</button></div>';
+  document.body.appendChild(box);
+}, false);
 
 // ---------- Diagnóstico: ?debug muestra errores y datos de la GPU en pantalla ----------
 if (new URLSearchParams(location.search).has('debug')) {

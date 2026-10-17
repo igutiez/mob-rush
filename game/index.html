@@ -75,7 +75,39 @@
     </div>
   </div>
 
-  <div id="loader" class="loader"><b>Mob Rush</b><span>Forjando el reino…</span></div>
+  <div id="loader" class="loader">
+    <b>Mob Rush</b><span>Forjando el reino…</span>
+    <small id="boot-error"></small>
+    <button id="boot-fix" class="primary hidden">Reparar y recargar</button>
+  </div>
+  <script>
+    // Si el juego no arranca (archivos de versiones distintas en caché, error de carga…),
+    // muestra el motivo y permite limpiar la caché y recargar.
+    (function () {
+      var shown = false;
+      function fail(msg) {
+        if (window.__booted || shown) return;
+        shown = true;
+        var e = document.getElementById('boot-error');
+        e.textContent = msg ? 'No se pudo arrancar: ' + msg : 'Está tardando demasiado.';
+        document.getElementById('boot-fix').classList.remove('hidden');
+      }
+      window.__bootFail = function (err) { fail(String((err && err.message) || err)); };
+      window.addEventListener('error', function (ev) {
+        var tag = ev.target && ev.target.tagName;
+        if (tag && tag !== 'SCRIPT') return;
+        fail(ev.message || 'error al cargar ' + ((ev.target && ev.target.src) || ''));
+      }, true);
+      window.addEventListener('unhandledrejection', function (ev) { fail(String((ev.reason && ev.reason.message) || ev.reason)); });
+      setTimeout(function () { fail(''); }, 25000);
+      document.getElementById('boot-fix').addEventListener('click', function () {
+        var jobs = [];
+        if ('serviceWorker' in navigator) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+        if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+        Promise.all(jobs).finally(function () { location.reload(); });
+      });
+    })();
+  </script>
 
   <script type="importmap">
     {

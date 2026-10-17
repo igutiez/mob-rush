@@ -1,5 +1,5 @@
 // Sube CACHE al publicar cambios para que los clientes descarguen la nueva versión.
-const CACHE = 'mobrush-v6';
+const CACHE = 'mobrush-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -47,8 +47,13 @@ const ASSETS = [
   './vendor/three/addons/loaders/GLTFLoader.js',
 ];
 
+// Al instalar se ignora la caché HTTP (GitHub Pages cachea 10 minutos) para no mezclar versiones.
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -59,17 +64,30 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Código y páginas: primero la red (siempre la versión publicada), la caché solo sin conexión.
+// Modelos, iconos y librerías: primero la caché.
+const isCode = (url) => url.pathname.endsWith('/') || /\.(html|js|css|webmanifest)$/.test(url.pathname) && !url.pathname.includes('/vendor/');
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== location.origin) return;
+  if (isCode(url)) {
+    e.respondWith(
+      fetch(req, { cache: 'no-cache' })
+        .then((res) => {
+          if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+          return res;
+        })
+        .catch(() => caches.match(req, { ignoreSearch: true })
+          .then((hit) => hit || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error()))),
+    );
+    return;
+  }
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((hit) => {
-      const net = fetch(req).then((res) => {
-        if (res.ok) caches.open(CACHE).then((c) => c.put(req, res.clone()));
-        return res;
-      });
-      if (hit) { net.catch(() => {}); return hit; }
-      return net.catch(() => (req.mode === 'navigate' ? caches.match('./index.html') : Response.error()));
-    }),
+    caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req).then((res) => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+      return res;
+    })),
   );
 });

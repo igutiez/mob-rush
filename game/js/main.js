@@ -937,7 +937,13 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 // ============================================================
 window.addEventListener('resize', resize);
 resize();
-await loadCharacters((p) => { $('loader').querySelector('span').textContent = `Reclutando el ejército… ${Math.round(p * 100)}%`; });
+$('loader').querySelector('span').textContent = 'Reclutando el ejército…';
+try {
+  await loadCharacters((p) => { $('loader').querySelector('span').textContent = `Reclutando el ejército… ${Math.round(p * 100)}%`; });
+} catch (err) {
+  window.__bootFail?.(err);
+  throw err;
+}
 initUI({ onPlay: startGame });
 buildLevel(save.level);
 {
@@ -969,6 +975,7 @@ renderer.setAnimationLoop(() => {
   }
 });
 
+window.__booted = true;
 requestAnimationFrame(() => $('loader').classList.add('done'));
 
 // Ayudas de depuración desde la consola: __mobrush.goto(n), __mobrush.hero()

@@ -1,5 +1,5 @@
 // Sube CACHE al publicar cambios para que los clientes descarguen la nueva versión.
-const CACHE = 'mobrush-v2';
+const CACHE = 'mobrush-v3';
 const ASSETS = [
   './',
   './index.html',

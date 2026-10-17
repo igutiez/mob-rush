@@ -82,10 +82,13 @@ function vatPatch(uniforms) {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + VAT_GLSL)
-      .replace('#include <beginnormal_vertex>', `vec3 objectNormal = mix(vatGet(vatNrm, aVat.x), vatGet(vatNrm, aVat.y), aVat.z);
+      .replace('#include <beginnormal_vertex>', `vec3 objectNormal = mix(vatGet(vatNrm, aVat.x), vatGet(vatNrm, aVat.y), aVat.z) * 2.0 - 1.0;
         float nLen = length(objectNormal);
         objectNormal = nLen > 1e-4 ? objectNormal / nLen : vec3(0.0, 1.0, 0.0);`)
       .replace('#include <begin_vertex>', 'vec3 transformed = mix(vatGet(vatPos, aVat.x), vatGet(vatPos, aVat.y), aVat.z);');
+    // Red de seguridad: un píxel inválido (NaN) se pintaría en blanco por toda la pantalla con el brillo
+    shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>',
+      '#include <dithering_fragment>\n  if (any(isnan(gl_FragColor)) || any(isinf(gl_FragColor))) gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0);');
   };
 }
 
@@ -164,7 +167,7 @@ function bakeCrowd(def) {
   const total = frames.length * V;
   const H = Math.ceil(total / W);
   const pos = new Float32Array(W * H * 4);
-  const nrm = new Uint16Array(W * H * 4);
+  const nrm = new Uint8Array(W * H * 4);
   frames.forEach((fr, f) => {
     const scaled = new Float32Array(fr.length);
     for (let i = 0; i < fr.length; i += 3) {
@@ -180,14 +183,14 @@ function bakeCrowd(def) {
       if (!(l > 1e-4)) { nn[i * 3] = 0; nn[i * 3 + 1] = 1; nn[i * 3 + 2] = 0; }
       const o = (f * V + i) * 4;
       pos[o] = scaled[i * 3]; pos[o + 1] = scaled[i * 3 + 1]; pos[o + 2] = scaled[i * 3 + 2]; pos[o + 3] = 1;
-      nrm[o] = THREE.DataUtils.toHalfFloat(nn[i * 3]);
-      nrm[o + 1] = THREE.DataUtils.toHalfFloat(nn[i * 3 + 1]);
-      nrm[o + 2] = THREE.DataUtils.toHalfFloat(nn[i * 3 + 2]);
-      nrm[o + 3] = 0;
+      nrm[o] = Math.round((nn[i * 3] * 0.5 + 0.5) * 255);
+      nrm[o + 1] = Math.round((nn[i * 3 + 1] * 0.5 + 0.5) * 255);
+      nrm[o + 2] = Math.round((nn[i * 3 + 2] * 0.5 + 0.5) * 255);
+      nrm[o + 3] = 255;
     }
   });
   const posTex = new THREE.DataTexture(pos, W, H, THREE.RGBAFormat, THREE.FloatType);
-  const nrmTex = new THREE.DataTexture(nrm, W, H, THREE.RGBAFormat, THREE.HalfFloatType);
+  const nrmTex = new THREE.DataTexture(nrm, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
   for (const t of [posTex, nrmTex]) { t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; }
 
   const uniforms = { vatPos: { value: posTex }, vatNrm: { value: nrmTex }, vatW: { value: W }, vatV: { value: V } };
